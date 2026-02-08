@@ -7,17 +7,31 @@ const auth = require("../middleware/auth");
 const router = express.Router();
 
 router.post("/", async (req, res) => {
-  const hash = await bcrypt.hash(req.body.password, 10);
-  User.create(req.body.username, hash, err =>
-    err ? res.status(400).send(err) : res.send("User created")
-  );
+  try {
+    const { username, password } = req.body;
+
+    // Check if username exists
+    const existingUser = await User.findByUsername(username); // make sure this returns the user or null
+    if (existingUser) {
+      return res.status(400).json({ message: "Username already exists" });
+    }
+
+    const hash = await bcrypt.hash(password, 10);
+    await User.create(username, hash);
+
+    return res.json({ message: "User created successfully" });
+  } catch (err) {
+    if (err.code === "SQLITE_CONSTRAINT") {
+      return res.status(400).json({ message: "Username already exists" });
+    }
+    return res.status(500).json({ message: "Server error" });
+  }
 });
 
 router.post("/login", (req, res) => {
   User.findByUsername(req.body.username, async (err, user) => {
     if (!user) return res.status(400).send("Invalid credentials");
-    if (user.token)
-      return res.status(403).send("Already logged in elsewhere");
+    if (user.token) return res.status(403).send("Already logged in elsewhere");
 
     const ok = await bcrypt.compare(req.body.password, user.password);
     if (!ok) return res.status(400).send("Invalid credentials");
@@ -35,7 +49,7 @@ router.get("/", (req, res) => {
   require("../db/database").all(
     "SELECT id,username FROM users",
     [],
-    (e, rows) => res.send(rows)
+    (e, rows) => res.send(rows),
   );
 });
 
